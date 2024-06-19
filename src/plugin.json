@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "datasource",
+  "name": "Response Headers Utility",
+  "id": "optimiz-responseheadersutility-datasource",
+  "metrics": true,
+  "backend": true,
+  "executable": "gpx_response_headers_utility",
+  "info": {
+    "description": "A very basic datasource plugin with one variable query that returns the specified response header from an http request",
+    "author": {
+      "name": "Optimiz"
+    },
+    "keywords": ["datasource"],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [],
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=10.3.3",
+    "plugins": []
+  }
+}
