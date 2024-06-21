@@ -1,11 +1,26 @@
-import { DataSourceInstanceSettings, CoreApp, ScopedVars } from '@grafana/data';
-import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
+import {
+  DataSourceInstanceSettings,
+  CoreApp,
+  ScopedVars,
+  LegacyMetricFindQueryOptions,
+  MetricFindValue,
+} from '@grafana/data';
+import { DataSourceWithBackend } from '@grafana/runtime';
 
-import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY } from './types';
+import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './types';
+import { MyCustomVariableSupport } from './variables';
 
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
     super(instanceSettings);
+    this.variables = new MyCustomVariableSupport(this);
+  }
+
+  async metricFindQuery(
+    query: MyVariableQuery,
+    options?: LegacyMetricFindQueryOptions | undefined
+  ): Promise<MetricFindValue[]> {
+    return [{ text: 'test', value: 'test' }];
   }
 
   getDefaultQuery(_: CoreApp): Partial<MyQuery> {
@@ -15,12 +30,11 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   applyTemplateVariables(query: MyQuery, scopedVars: ScopedVars): Record<string, any> {
     return {
       ...query,
-      queryText: getTemplateSrv().replace(query.queryText, scopedVars),
     };
   }
 
   filterQuery(query: MyQuery): boolean {
     // if no query has been provided, prevent the query from being executed
-    return !!query.queryText;
+    return !query.isQueryEditor;
   }
 }
