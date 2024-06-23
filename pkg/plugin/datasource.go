@@ -271,3 +271,35 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 func newHealthCheckErrorf(format string, args ...interface{}) *backend.CheckHealthResult {
 	return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: fmt.Sprintf(format, args...)}
 }
+
+func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	switch req.Path {
+	case "variable-header":
+		r, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://jsonplaceholder.typicode.com/users", nil)
+		if err != nil {
+			return sender.Send(&backend.CallResourceResponse{
+				Status: http.StatusBadRequest,
+			})
+		}
+		resp, err := d.httpClient.Do(r)
+		if err != nil {
+			return sender.Send(&backend.CallResourceResponse{
+				Status: http.StatusBadRequest,
+			})
+		}
+		headerValue := resp.Header.Get("Server")
+		jsonBody := fmt.Sprintf(`{"header": "%s" }`, headerValue)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: http.StatusOK,
+			Body:   []byte(jsonBody),
+		})
+	case "example":
+		return sender.Send(&backend.CallResourceResponse{
+			Status: http.StatusNotFound,
+		})
+	default:
+		return sender.Send(&backend.CallResourceResponse{
+			Status: http.StatusNotFound,
+		})
+	}
+}
