@@ -2,23 +2,23 @@ package plugin
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/httpclient"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/tracing"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // Make sure Datasource implements required interfaces. This is important to do
@@ -39,11 +39,14 @@ var (
 
 // NewDatasource creates a new datasource instance.
 func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	opts, err := settings.HTTPClientOptions(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("http client options: %w", err)
-	}
-
+	// opts, err := settings.HTTPClientOptions(ctx)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("http client options: %w", err)
+	// }
+	// cl, err := httpclient.New(opts)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("httpclient new: %w", err)
+	// }
 	// Uncomment the following to forward all HTTP headers in the requests made by the client
 	// (disabled by default since SDK v0.161.0)
 	// opts.ForwardHTTPHeaders = true
@@ -56,10 +59,10 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 	//	- CustomHeadersMiddleware (populates headers if Custom HTTP Headers been configured via the DataSourceHttpSettings
 	//		component from @grafana/ui)
 	//	- ContextualMiddleware (custom middlewares per context.Context, see httpclient.WithContextualMiddleware)
-	cl, err := httpclient.New(opts)
-	if err != nil {
-		return nil, fmt.Errorf("httpclient new: %w", err)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+	cl := &http.Client{Transport: tr}
 	return &Datasource{
 		settings:   settings,
 		httpClient: cl,
@@ -98,48 +101,13 @@ func (d *Datasource) Dispose() {
 // The QueryDataResponse contains a map of RefID to the response for each query, and each response
 // contains Frames ([]*Frame).
 func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
-	// Spans are created automatically for QueryData and all other plugin interface methods.
-	// The span's context is in the ctx, you can get it with trace.SpanContextFromContext(ctx)
-	// Check out OpenTelemetry's Go SDK documentation for more information on how to use it.
-	// sctx := trace.SpanContextFromContext(ctx)
-
-	// logger.FromContext creates a new sub-logger with the parameters stored in the context.
-	// By default, the following log parameters are added:
-	// traceID, pluginID, endpoint and some attributes identifying the datasource/user (if available)
-	// You can add more log parameters to a context.Context using log.WithContextualAttributes.
-	// You can also create your own loggers using log.New, rather than using log.DefaultLogger.
-	ctxLogger := log.DefaultLogger.FromContext(ctx)
-	ctxLogger.Debug("QueryData", "queries", len(req.Queries))
-
 	// create response struct
 	response := backend.NewQueryDataResponse()
 
 	// loop over queries and execute them individually.
-	for i, q := range req.Queries {
-		ctxLogger.Debug("Processing query", "number", i, "ref", q.RefID)
+	for _, q := range req.Queries {
+		res := d.query(ctx, req.PluginContext, q)
 
-		if i%2 != 0 {
-			// Just to demonstrate how to return an error with a custom status code.
-			response.Responses[q.RefID] = backend.ErrDataResponse(
-				backend.StatusBadRequest,
-				fmt.Sprintf("user friendly error for query number %v, excluding any sensitive information", i+1),
-			)
-			continue
-		}
-
-		res, err := d.query(ctx, req.PluginContext, q)
-		switch {
-		case err == nil:
-			break
-		case errors.Is(err, context.DeadlineExceeded):
-			res = backend.ErrDataResponse(backend.StatusTimeout, "gateway timeout")
-		case errors.Is(err, errRemoteRequest):
-			res = backend.ErrDataResponse(backend.StatusBadGateway, "bad gateway request")
-		case errors.Is(err, errRemoteResponse):
-			res = backend.ErrDataResponse(backend.StatusValidationFailed, "bad gateway response")
-		default:
-			res = backend.ErrDataResponse(backend.StatusInternal, err.Error())
-		}
 		// save the response in a hashmap
 		// based on with RefID as identifier
 		response.Responses[q.RefID] = res
@@ -150,90 +118,32 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 
 type queryModel struct{}
 
-func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, query backend.DataQuery) (backend.DataResponse, error) {
-	// Create spans for this function.
-	// tracing.DefaultTracer() returns the tracer initialized when calling Manage().
-	// Refer to OpenTelemetry's Go SDK to know how to customize your spans.
-	ctx, span := tracing.DefaultTracer().Start(
-		ctx,
-		"query processing",
-		trace.WithAttributes(
-			attribute.String("query.ref_id", query.RefID),
-			attribute.String("query.type", query.QueryType),
-			attribute.Int64("query.max_data_points", query.MaxDataPoints),
-			attribute.Int64("query.interval_ms", query.Interval.Milliseconds()),
-			attribute.Int64("query.time_range.from", query.TimeRange.From.Unix()),
-			attribute.Int64("query.time_range.to", query.TimeRange.To.Unix()),
-		),
-	)
-	defer span.End()
+func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, query backend.DataQuery) backend.DataResponse {
+	var response backend.DataResponse
 
-	ctxLogger := log.DefaultLogger.FromContext(ctx)
+	// Unmarshal the JSON into our queryModel.
+	var qm queryModel
 
-	// Do HTTP request
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.settings.URL, nil)
+	err := json.Unmarshal(query.JSON, &qm)
 	if err != nil {
-		return backend.DataResponse{}, fmt.Errorf("new request with context: %w", err)
-	}
-	if len(query.JSON) > 0 {
-		input := &apiQuery{}
-		err = json.Unmarshal(query.JSON, input)
-		if err != nil {
-			return backend.DataResponse{}, fmt.Errorf("unmarshal: %w", err)
-		}
-		q := req.URL.Query()
-		q.Add("multiplier", strconv.Itoa(input.Multiplier))
-		req.URL.RawQuery = q.Encode()
-	}
-	httpResp, err := d.httpClient.Do(req)
-	switch {
-	case err == nil:
-		break
-	case errors.Is(err, context.DeadlineExceeded):
-		return backend.DataResponse{}, err
-	default:
-		return backend.DataResponse{}, fmt.Errorf("http client do: %w: %s", errRemoteRequest, err)
-	}
-	defer func() {
-		if err := httpResp.Body.Close(); err != nil {
-			ctxLogger.Error("query: failed to close response body", "err", err)
-		}
-	}()
-	span.AddEvent("HTTP request done")
-
-	// Make sure the response was successful
-	if httpResp.StatusCode != http.StatusOK {
-		return backend.DataResponse{}, fmt.Errorf("%w: expected 200 response, got %d", errRemoteResponse, httpResp.StatusCode)
+		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("json unmarshal: %v", err.Error()))
 	}
 
-	// Decode response
-	var body apiMetrics
-	if err := json.NewDecoder(httpResp.Body).Decode(&body); err != nil {
-		return backend.DataResponse{}, fmt.Errorf("%w: decode: %s", errRemoteRequest, err)
-	}
-	span.AddEvent("JSON response decoded")
+	// create data frame response.
+	// For an overview on data frames and how grafana handles them:
+	// https://grafana.com/developers/plugin-tools/introduction/data-frames
+	frame := data.NewFrame("response")
 
-	// Create slice of values for time and values.
-	times := make([]time.Time, len(body.DataPoints))
-	values := make([]float64, len(body.DataPoints))
-	for i, p := range body.DataPoints {
-		times[i] = p.Time
-		values[i] = p.Value
-	}
-	span.AddEvent("Datapoints created")
+	// add fields.
+	frame.Fields = append(frame.Fields,
+		data.NewField("time", nil, []time.Time{query.TimeRange.From, query.TimeRange.To}),
+		data.NewField("values", nil, []int64{10, 20}),
+	)
 
-	// Create frame and add it to the response
-	dataResp := backend.DataResponse{
-		Frames: []*data.Frame{
-			data.NewFrame(
-				"response",
-				data.NewField("time", nil, times),
-				data.NewField("values", nil, values),
-			),
-		},
-	}
-	span.AddEvent("Frames created")
-	return dataResp, err
+	// add the frames to the response.
+	response.Frames = append(response.Frames, frame)
+
+	return response
 }
 
 // CheckHealth handles health checks sent from Grafana to the plugin.
@@ -273,25 +183,44 @@ func newHealthCheckErrorf(format string, args ...interface{}) *backend.CheckHeal
 }
 
 func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	requestBody := &apiQuery{}
+	err := json.Unmarshal(req.Body, requestBody)
+	if err != nil {
+		return sender.Send(&backend.CallResourceResponse{
+			Status: http.StatusBadRequest,
+		})
+	}
 	switch req.Path {
 	case "variable-header":
-		r, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://jsonplaceholder.typicode.com/users", nil)
+		var body io.Reader
+		if requestBody.Method.Value == "POST" {
+			body = strings.NewReader(requestBody.PostBody)
+		} else {
+			body = nil
+		}
+		r, err := http.NewRequestWithContext(ctx, requestBody.Method.Value, requestBody.URL, body)
 		if err != nil {
 			return sender.Send(&backend.CallResourceResponse{
 				Status: http.StatusBadRequest,
 			})
 		}
+		// apply headers
+		for _, header := range requestBody.Headers {
+			r.Header.Set(header.Key, header.Value)
+		}
+
 		resp, err := d.httpClient.Do(r)
 		if err != nil {
 			return sender.Send(&backend.CallResourceResponse{
 				Status: http.StatusBadRequest,
+				Body: []byte(err.Error()),
 			})
 		}
-		headerValue := resp.Header.Get("Server")
+		headerValue := resp.Header.Get(requestBody.HeaderToReturn)
 		jsonBody := fmt.Sprintf(`{"header": "%s" }`, headerValue)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: http.StatusOK,
-			Body:   []byte(jsonBody),
+			Body:   []byte(jsonBody),7
 		})
 	case "example":
 		return sender.Send(&backend.CallResourceResponse{

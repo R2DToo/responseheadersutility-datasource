@@ -20,9 +20,10 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
     query: MyVariableQuery,
     options?: LegacyMetricFindQueryOptions | undefined
   ): Promise<MetricFindValue[]> {
-    const variableHeaderResource = await this.getResource('variable-header');
+    console.log('variable query: ', query);
+    const variableHeaderResource = await this.postResource('variable-header', query);
     const variable = [{ text: variableHeaderResource.header, value: variableHeaderResource.header }];
-    console.log('variable: ', variable);
+    console.log('variable result: ', variable);
     return variable;
   }
 

@@ -32,6 +32,7 @@
     "@types/node": "^20.8.7",
     "@types/react-router-dom": "^5.2.0",
     "@types/testing-library__jest-dom": "5.14.8",
+    "@types/uuid": "^10.0.0",
     "copy-webpack-plugin": "^11.0.0",
     "css-loader": "^6.7.3",
     "eslint-plugin-deprecation": "^2.0.0",
@@ -61,11 +62,12 @@
     "@emotion/css": "11.10.6",
     "@grafana/data": "10.3.3",
     "@grafana/runtime": "10.3.3",
-    "@grafana/ui": "10.3.3",
     "@grafana/schema": "10.3.3",
+    "@grafana/ui": "10.3.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "tslib": "2.5.3"
+    "tslib": "2.5.3",
+    "uuid": "^10.0.0"
   },
   "packageManager": "npm@10.2.3"
 }

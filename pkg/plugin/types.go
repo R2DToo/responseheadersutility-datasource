@@ -14,5 +14,21 @@ type apiDataPoint struct {
 }
 
 type apiQuery struct {
-	Multiplier int `json:"multiplier"`
+	Method struct {
+		Label string `json:"label"`
+		Value string `json:"value"`
+	} `json:"method"`
+	URL     string `json:"url"`
+	PostBody     string `json:"postBody"`
+	HeaderToReturn     string `json:"headerToReturn"`
+	Headers []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+		ID    string `json:"id"`
+	} `json:"headers"`
+	QueryParams []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+		ID    string `json:"id"`
+	} `json:"queryParams"`
 }
