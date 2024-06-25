@@ -218,9 +218,17 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		}
 		headerValue := resp.Header.Get(requestBody.HeaderToReturn)
 		jsonBody := fmt.Sprintf(`{"header": "%s" }`, headerValue)
+		// bodyBytes, err := ioutil.ReadAll(resp.Body)
+		// if err != nil {
+		// 	return sender.Send(&backend.CallResourceResponse{
+		// 		Status: http.StatusBadRequest,
+		// 		Body: []byte(err.Error()),
+		// 	})
+		// }
 		return sender.Send(&backend.CallResourceResponse{
 			Status: http.StatusOK,
-			Body:   []byte(jsonBody),7
+			Body:   []byte(jsonBody),
+			// Body:   bodyBytes,
 		})
 	case "example":
 		return sender.Send(&backend.CallResourceResponse{
