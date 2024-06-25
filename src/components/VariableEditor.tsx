@@ -5,7 +5,6 @@ import { DataSource } from '../datasource';
 import { MyDataSourceOptions, MyQuery, MyVariableQuery, DEFAULT_VARIABLE_QUERY } from '../types';
 import { defaults } from 'lodash';
 import { Headers } from './Headers';
-import { QueryParams } from './QueryParams';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions, MyVariableQuery>;
 
@@ -60,7 +59,6 @@ export function VariableEditor({ query, onChange, onRunQuery, datasource }: Prop
         </InlineFieldRow>
       )}
       <Headers query={query} onChange={onChange} onRunQuery={onRunQuery} datasource={datasource} />
-      <QueryParams query={query} onChange={onChange} onRunQuery={onRunQuery} datasource={datasource} />
     </>
   );
 }

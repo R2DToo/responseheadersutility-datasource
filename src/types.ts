@@ -18,7 +18,6 @@ export interface MyVariableQuery extends DataQuery {
   method: SelectableValue<string>;
   url: string;
   headers: Array<{ key: string; value: string; id: string }>;
-  queryParams: Array<{ key: string; value: string; id: string }>;
   postBody: string;
   headerToReturn: string;
 }
@@ -27,7 +26,6 @@ export const DEFAULT_VARIABLE_QUERY: Partial<MyVariableQuery> = {
   method: { label: 'GET', value: 'GET' },
   url: 'http://jsonplaceholder.typicode.com/users',
   headers: [{ key: 'header-key', value: 'header-value', id: 'nouuid' }],
-  queryParams: [{ key: 'query-param-key', value: 'query-param-value', id: 'nouuid' }],
   postBody: '',
   headerToReturn: '',
 };
